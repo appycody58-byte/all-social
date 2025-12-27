@@ -1,0 +1,104 @@
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:17-alpine
+    container_name: boilerplate_postgres
+    environment:
+      POSTGRES_DB: boilerplate_postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c effective_cache_size=2GB
+      -c work_mem=16MB
+      -c random_page_cost=1.1
+      -c synchronous_commit=off
+      -c max_parallel_workers=4
+      -c max_parallel_workers_per_gather=2
+      -c jit=off
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d boilerplate_postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - boilerplate-network
+
+  # Restack Engine
+  restack:
+    image: ghcr.io/restackio/restack:main
+    pull_policy: always
+    container_name: restack
+    ports:
+      - "5233:5233"
+      - "6233:6233"
+      - "7233:7233"
+      - "9233:9233"
+      - "10233:10233"
+      - "11233:11233"
+      - "12233:12233"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6233/api/engine/health"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+    networks:
+      - boilerplate-network
+
+  temporal-ui:
+    image: temporalio/ui:latest
+    container_name: temporal_ui
+    ports:
+      - "8233:8080"
+    environment:
+      - TEMPORAL_ADDRESS=restack:7233
+      - TEMPORAL_UI_PORT=8080
+    depends_on:
+      - restack
+    networks:
+      - boilerplate-network
+
+  # ClickHouse Database for Analytics and Datasets
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: boilerplate_clickhouse
+    environment:
+      CLICKHOUSE_DB: boilerplate_clickhouse
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native client
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse/
+      - clickhouse_logs:/var/log/clickhouse-server/
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - boilerplate-network
+
+volumes:
+  postgres_dev_data:
+    driver: local
+  clickhouse_data:
+    driver: local
+  clickhouse_logs:
+    driver: local
+
+networks:
+  boilerplate-network:
+    driver: bridge 
